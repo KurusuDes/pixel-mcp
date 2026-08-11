@@ -160,10 +160,11 @@ app.command.ExportSpriteSheet{
 	extrude = false
 }
 
--- Build output JSON
-local result = string.format('{"spritesheet_path":"%%s","frame_count":%%d', outputPath, #spr.frames)
+-- Build output JSON (backslashes in Windows paths must be escaped for valid JSON)
+local jsonSafeOutput = outputPath:gsub("\\", "\\\\")
+local result = string.format('{"spritesheet_path":"%%s","frame_count":%%d', jsonSafeOutput, #spr.frames)
 if %t then
-	local jsonPath = outputPath:gsub("%%.%%w+$", ".json")
+	local jsonPath = outputPath:gsub("%%.%%w+$", ".json"):gsub("\\", "\\\\")
 	result = result .. string.format(',"metadata_path":"%%s"', jsonPath)
 end
 result = result .. "}"
@@ -287,5 +288,5 @@ local newPath = "%s"
 -- Save to new path
 spr:saveAs(newPath)
 
-print(string.format('{"success":true,"file_path":"%%s"}', newPath))`, escapedPath)
+print(string.format('{"success":true,"file_path":"%%s"}', newPath:gsub("\\", "\\\\")))`, escapedPath)
 }
