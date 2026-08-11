@@ -59,7 +59,12 @@ usan `echo`, `true` y `sh` como ejecutables falsos de Aseprite. Esos
 binarios no existen en Windows. Es un problema del test, no del código
 productivo.
 
-### 2. Bug real: rutas Windows rompen el JSON de salida de algunas tools
+### 2. Bug real: rutas Windows rompen el JSON de salida de algunas tools — **CORREGIDO**
+
+> **Estado**: corregido en este fork (commit `9a29828`, rama `custom/juan`).
+> Se escapan los backslashes en el Lua antes del `string.format` del JSON.
+> `TestSaveAs_ViaMCP` y `TestExportSpritesheet_ViaMCP` pasan en Windows.
+> Se deja la descripción original como referencia:
 
 **Síntoma**: `TestSaveAs_ViaMCP` y `TestExportSpritesheet_ViaMCP` fallan;
 el cliente de ejemplo muere en el paso de `export_spritesheet`.
@@ -109,8 +114,14 @@ La sección "Package Organization" del `CLAUDE.md` original es exacta:
   Juan y agregarlo (`git remote add origin <url-del-fork>`). No hay `gh`
   autenticado en esta máquina.
 
-## Pendiente de definir (del handoff original)
+## Objetivo del fork (definido por Juan, 2026-08-11)
 
-No implementar features nuevas sin confirmar el objetivo con Juan
-(posibles direcciones mencionadas: pipeline de assets para Unity, o
-herramienta para alumnos). Cuando se defina, crear `ROADMAP.md`.
+Ver si es viable pasar una imagen de referencia y generar pixel art a
+partir de ella, y mejorar el repo para lograrlo. Ver `ROADMAP.md` para
+el plan de trabajo y `examples/refart/` para el harness de viabilidad
+(pipeline: analyze_reference → downsample_image → quantize_palette →
+export_sprite + preview escalado).
+
+Resultado del experimento inicial: **viable**. El pipeline existente ya
+produce pixel art reconocible desde una foto/render; k-means + dithering
+da resultados notablemente mejores que median_cut sin dithering.
