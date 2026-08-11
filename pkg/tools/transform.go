@@ -15,10 +15,11 @@ import (
 
 // DownsampleImageInput defines the input parameters for the downsample_image tool.
 type DownsampleImageInput struct {
-	SourcePath   string `json:"source_path" jsonschema:"Path to source image file (.aseprite, .png, .jpg, .bmp, .gif)"`
-	TargetWidth  int    `json:"target_width" jsonschema:"Target width in pixels (1-65535)"`
-	TargetHeight int    `json:"target_height" jsonschema:"Target height in pixels (1-65535)"`
-	OutputPath   string `json:"output_path,omitempty" jsonschema:"Optional output path for downsampled sprite (defaults to temp directory)"`
+	SourcePath   string   `json:"source_path" jsonschema:"Path to source image file (.aseprite, .png, .jpg, .bmp, .gif)"`
+	TargetWidth  int      `json:"target_width" jsonschema:"Target width in pixels (1-65535)"`
+	TargetHeight int      `json:"target_height" jsonschema:"Target height in pixels (1-65535)"`
+	OutputPath   string   `json:"output_path,omitempty" jsonschema:"Optional output path for downsampled sprite (defaults to temp directory)"`
+	EdgeStrength *float64 `json:"edge_strength,omitempty" jsonschema:"Keep dark outlines crisp instead of averaging them away (0-1, default: 0 = plain box filter). Area averaging dissolves thin dark lines into mid-tones, which blurs the silhouette; try 0.6-0.9 for character art or anything where the outline carries the read."`
 }
 
 // DownsampleImageOutput defines the output for the downsample_image tool.
@@ -130,6 +131,9 @@ func RegisterTransformTools(server *mcp.Server, client *aseprite.Client, gen *as
 			if input.TargetHeight < 1 || input.TargetHeight > 65535 {
 				return nil, nil, fmt.Errorf("target_height must be between 1 and 65535, got %d", input.TargetHeight)
 			}
+			if input.EdgeStrength != nil && (*input.EdgeStrength < 0 || *input.EdgeStrength > 1) {
+				return nil, nil, fmt.Errorf("edge_strength must be between 0 and 1, got %g", *input.EdgeStrength)
+			}
 
 			// Determine output path
 			outputPath := input.OutputPath
@@ -170,7 +174,11 @@ func RegisterTransformTools(server *mcp.Server, client *aseprite.Client, gen *as
 			opLogger.Information("Source image dimensions", "width", sourceWidth, "height", sourceHeight)
 
 			// Generate downsampling script
-			script := gen.DownsampleImage(input.SourcePath, outputPath, input.TargetWidth, input.TargetHeight)
+			edgeStrength := 0.0
+			if input.EdgeStrength != nil {
+				edgeStrength = *input.EdgeStrength
+			}
+			script := gen.DownsampleImageEdgeAware(input.SourcePath, outputPath, input.TargetWidth, input.TargetHeight, edgeStrength)
 
 			// Execute Lua script
 			output, err := client.ExecuteLua(ctx, script, "")

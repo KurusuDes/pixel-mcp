@@ -413,8 +413,32 @@ print("Outline applied successfully")`,
 //   - Source sprite has no layers or frames
 //   - Source sprite has no cel in first frame
 func (g *LuaGenerator) DownsampleImage(sourcePath, outputPath string, targetWidth, targetHeight int) string {
+	return g.DownsampleImageEdgeAware(sourcePath, outputPath, targetWidth, targetHeight, 0)
+}
+
+// DownsampleImageEdgeAware downsamples like DownsampleImage but can keep dark
+// outlines from dissolving into the average.
+//
+// Area averaging destroys thin dark lines. A one-pixel outline occupies a small
+// fraction of the source block it falls into, so the average barely darkens and
+// the line turns into a muddy mid-tone. In art where the silhouette carries the
+// read — characters especially — that blurs exactly the edge that should stay
+// crisp.
+//
+// edgeStrength between 0 and 1 controls how far a block that contains a
+// coherent dark structure is pulled toward that structure's color instead of
+// the block average. 0 is a plain box filter. Blocks with no dark line, or with
+// only an isolated dark pixel, are averaged normally, so smooth regions are
+// left alone and noise is not mistaken for an outline.
+func (g *LuaGenerator) DownsampleImageEdgeAware(sourcePath, outputPath string, targetWidth, targetHeight int, edgeStrength float64) string {
 	escapedSource := EscapeString(sourcePath)
 	escapedOutput := EscapeString(outputPath)
+
+	if edgeStrength < 0 {
+		edgeStrength = 0
+	} else if edgeStrength > 1 {
+		edgeStrength = 1
+	}
 
 	return fmt.Sprintf(`-- Load source image
 local srcSprite = app.open("%s")
@@ -456,6 +480,21 @@ local targetImage = Image(targetWidth, targetHeight, srcSprite.colorMode)
 local scaleX = srcWidth / targetWidth
 local scaleY = srcHeight / targetHeight
 
+-- Edge preservation: how far a block holding a dark line is pulled toward
+-- that line instead of the block average. 0 is a plain box filter.
+local edgeStrength = %.3f
+
+-- A block counts as holding a line only if it is this much darker at its
+-- darkest than on average, and if enough of the block shares that darkness.
+-- Together these reject smooth shading and isolated noisy pixels.
+local edgeContrast = 30
+local edgeBand = 28
+local edgeMinFraction = 0.08
+
+local function luma(r, g, b)
+	return 0.299 * r + 0.587 * g + 0.114 * b
+end
+
 -- Downsample using box filter (area averaging)
 for ty = 0, targetHeight - 1 do
 	for tx = 0, targetWidth - 1 do
@@ -472,15 +511,24 @@ for ty = 0, targetHeight - 1 do
 		-- Average all pixels in the source region
 		local sumR, sumG, sumB, sumA = 0, 0, 0, 0
 		local count = 0
+		local minLuma = 1e9
 
 		for sy = sy1, sy2 - 1 do
 			for sx = sx1, sx2 - 1 do
 				local pixel = srcImage:getPixel(sx, sy)
-				sumR = sumR + app.pixelColor.rgbaR(pixel)
-				sumG = sumG + app.pixelColor.rgbaG(pixel)
-				sumB = sumB + app.pixelColor.rgbaB(pixel)
+				local r = app.pixelColor.rgbaR(pixel)
+				local g = app.pixelColor.rgbaG(pixel)
+				local b = app.pixelColor.rgbaB(pixel)
+				sumR = sumR + r
+				sumG = sumG + g
+				sumB = sumB + b
 				sumA = sumA + app.pixelColor.rgbaA(pixel)
 				count = count + 1
+
+				local l = luma(r, g, b)
+				if l < minLuma then
+					minLuma = l
+				end
 			end
 		end
 
@@ -490,8 +538,47 @@ for ty = 0, targetHeight - 1 do
 		local avgB = math.floor(sumB / count + 0.5)
 		local avgA = math.floor(sumA / count + 0.5)
 
+		local outR, outG, outB = avgR, avgG, avgB
+
+		if edgeStrength > 0 and count > 1 then
+			local avgLuma = luma(avgR, avgG, avgB)
+			if avgLuma - minLuma >= edgeContrast then
+				-- Average the dark cluster rather than taking the single
+				-- darkest pixel, so one noisy pixel cannot set the color.
+				local darkR, darkG, darkB, darkCount = 0, 0, 0, 0
+				for sy = sy1, sy2 - 1 do
+					for sx = sx1, sx2 - 1 do
+						local pixel = srcImage:getPixel(sx, sy)
+						local r = app.pixelColor.rgbaR(pixel)
+						local g = app.pixelColor.rgbaG(pixel)
+						local b = app.pixelColor.rgbaB(pixel)
+						if luma(r, g, b) <= minLuma + edgeBand then
+							darkR = darkR + r
+							darkG = darkG + g
+							darkB = darkB + b
+							darkCount = darkCount + 1
+						end
+					end
+				end
+
+				local fraction = darkCount / count
+				if fraction >= edgeMinFraction then
+					darkR = darkR / darkCount
+					darkG = darkG / darkCount
+					darkB = darkB / darkCount
+
+					-- Weight by how much of the block the line covers, so a
+					-- block the line barely clips is not fully darkened.
+					local w = edgeStrength * math.min(1.0, fraction * 3.0)
+					outR = math.floor(avgR + (darkR - avgR) * w + 0.5)
+					outG = math.floor(avgG + (darkG - avgG) * w + 0.5)
+					outB = math.floor(avgB + (darkB - avgB) * w + 0.5)
+				end
+			end
+		end
+
 		-- Set target pixel
-		local color = app.pixelColor.rgba(avgR, avgG, avgB, avgA)
+		local color = app.pixelColor.rgba(outR, outG, outB, avgA)
 		targetImage:drawPixel(tx, ty, color)
 	end
 end
@@ -510,5 +597,6 @@ srcSprite:close()
 print("%s")`,
 		escapedSource, escapedSource,
 		targetWidth, targetHeight,
+		edgeStrength,
 		escapedOutput, escapedOutput)
 }
