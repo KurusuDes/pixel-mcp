@@ -87,6 +87,47 @@ venir del agente que decide encuadre, tamaño, número de colores y fuerza
 de detalle mirando la imagen. El servidor debe darle las herramientas y
 el feedback para hacerlo, no adivinar.
 
+## Experimento 3 (2026-08-11): escena ilustrada, dirección de arte
+
+Referencia: escena de isla flotante con cabaña, personajes y cielo nocturno,
+1254x1254. **No es pixel art real**: medida la alineación de bordes contra
+rejillas de 1 a 16 px, el "lift" sobre azar es 1.00x en todas — no hay
+rejilla nativa. El 79,7% de las secuencias de color son de 1 píxel y tiene
+171.653 colores únicos. Es una ilustración en estilo pixel art.
+
+Dos problemas de dirección de arte y sus arreglos:
+
+### El filtro de caja disuelve el contorno
+
+Un contorno oscuro de 1px ocupa poca fracción del bloque de origen, así que
+el promedio apenas se oscurece y la línea se vuelve un tono medio embarrado
+— justo lo que difumina la silueta. `edge_strength` en `downsample_image`
+detecta bloques con estructura oscura coherente y los sesga hacia ella.
+
+A 128x128: los tonos medios embarrados bajan del 32,4% al 27,6% de la
+imagen y la estructura oscura sube del 49,7% al 52,1%.
+
+### La paleta se llena de casi-duplicados
+
+Los cuantizadores devuelven exactamente los colores pedidos, los justifique
+la imagen o no. El sobrante son grupos de entradas casi idénticas que
+gastan slots, producen banding y —en el caso de los casi-negros— compiten
+con el contorno. `min_color_distance` en `quantize_palette` colapsa cada
+grupo perceptual conservando el más usado.
+
+Pidiendo 32 colores: quedan 25 con umbral 9, y 20 con umbral 14.
+
+**Cuidado con la escala del umbral**: `go-colorful` normaliza L* a 0-1, no a
+0-100. Pasarle un deltaE convencional colapsaba la paleta entera a 1 color.
+`labDeltaE` lo reexpresa y hay un test que fija negro-a-blanco en 100.
+
+### Receta que funciona para este tipo de referencia
+
+```bash
+go run ./examples/refart -input escena.png -width 128 -colors 32 \
+  -algorithm kmeans -detail 5 -edge 0.85 -merge 9
+```
+
 ## Fase 1 — Pipeline de conversión de referencia (prioridad)
 
 - [ ] **Tool compuesta `pixelize_reference`**: una sola llamada MCP que
@@ -142,6 +183,10 @@ el feedback para hacerlo, no adivinar.
 - [x] Muestreo ponderado por detalle en la cuantización, expuesto como
       `detail_strength` en `quantize_palette` (commit `31b2460`).
 - [x] `refart` deriva el alto de la proporción original (commit `d649b45`).
+- [x] Preservación de contorno en el downsample, expuesta como `edge_strength`
+      en `downsample_image` (commit `ecce210`).
+- [x] Fusión de colores perceptualmente cercanos, expuesta como
+      `min_color_distance` en `quantize_palette` (commit `fa5e674`).
 - [ ] Arreglar los 4 tests de `pkg/aseprite` que asumen Unix
       (`echo`/`true`/`sh` como ejecutables falsos) para que corran en
       Windows, y valorar PR upstream de ambos fixes.

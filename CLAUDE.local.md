@@ -129,6 +129,10 @@ tocar este código:
 - `detail_strength` (añadido en este fork) solo surte efecto con `kmeans`.
   Actúa duplicando muestras, y `median_cut` elige bucket por extensión de
   color, no por población.
+- **`go-colorful` normaliza L\* a 0-1, no a 0-100.** Su `colorDistanceLab`
+  devuelve una centésima del deltaE que cita cualquier referencia de color.
+  Usar `labDeltaE` para umbrales en unidades convencionales; pasarle un
+  deltaE crudo colapsa la paleta entera a un color.
 - El dithering no es una mejora universal: ayudó en un render sintético y
   empeoró una foto con sujeto orgánico. No ponerlo por defecto.
 
