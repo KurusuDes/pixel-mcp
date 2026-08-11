@@ -122,6 +122,19 @@ el plan de trabajo y `examples/refart/` para el harness de viabilidad
 (pipeline: analyze_reference → downsample_image → quantize_palette →
 export_sprite + preview escalado).
 
-Resultado del experimento inicial: **viable**. El pipeline existente ya
-produce pixel art reconocible desde una foto/render; k-means + dithering
-da resultados notablemente mejores que median_cut sin dithering.
+Resultado: **viable**. El pipeline existente ya produce pixel art
+reconocible desde una foto o un render. Dos cosas a tener presentes al
+tocar este código:
+
+- `detail_strength` (añadido en este fork) solo surte efecto con `kmeans`.
+  Actúa duplicando muestras, y `median_cut` elige bucket por extensión de
+  color, no por población.
+- El dithering no es una mejora universal: ayudó en un render sintético y
+  empeoró una foto con sujeto orgánico. No ponerlo por defecto.
+
+Los tests de `quantization_detail_test.go` cubren el **mecanismo de
+muestreo**, no el resultado final de la cuantización: las imágenes
+sintéticas no reproducen la mezcla de área, dispersión de color y textura
+que hace que el peso importe, y los tres algoritmos responden distinto.
+Las cifras de resultado están medidas sobre imágenes reales y anotadas en
+`ROADMAP.md`.
