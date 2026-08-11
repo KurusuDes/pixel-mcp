@@ -16,6 +16,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,7 +32,7 @@ import (
 func main() {
 	input := flag.String("input", "", "path to reference image (.png/.jpg/.bmp/.gif)")
 	width := flag.Int("width", 96, "target pixel art width")
-	height := flag.Int("height", 60, "target pixel art height")
+	height := flag.Int("height", 0, "target pixel art height (0 = derive from source aspect ratio)")
 	colors := flag.Int("colors", 16, "target palette size (2-256)")
 	algorithm := flag.String("algorithm", "median_cut", "quantization algorithm: median_cut, kmeans, octree")
 	dither := flag.Bool("dither", false, "apply Floyd-Steinberg dithering during quantization")
@@ -62,6 +67,20 @@ func run(input string, width, height, colors int, algorithm string, dither bool,
 	if err != nil {
 		return err
 	}
+
+	// A height of 0 means "keep the source proportions" — deforming the
+	// subject is the most common way to ruin a reference conversion.
+	srcW, srcH, err := imageSize(absInput)
+	if err != nil {
+		return err
+	}
+	if height <= 0 {
+		height = int(math.Round(float64(width) * float64(srcH) / float64(srcW)))
+		if height < 1 {
+			height = 1
+		}
+	}
+	fmt.Printf("      source %dx%d -> target %dx%d\n", srcW, srcH, width, height)
 
 	serverPath := os.Getenv("ASEPRITE_MCP_PATH")
 	if serverPath == "" {
@@ -185,6 +204,21 @@ func run(input string, width, height, colors int, algorithm string, dither bool,
 
 	fmt.Println("done:", absOut)
 	return nil
+}
+
+// imageSize reads only the header of the reference image to get its dimensions.
+func imageSize(path string) (int, int, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer f.Close()
+
+	cfg, _, err := image.DecodeConfig(f)
+	if err != nil {
+		return 0, 0, fmt.Errorf("could not read image dimensions from %s: %w", filepath.Base(path), err)
+	}
+	return cfg.Width, cfg.Height, nil
 }
 
 func callTool(ctx context.Context, session *mcp.ClientSession, name string, args map[string]any) (string, error) {
