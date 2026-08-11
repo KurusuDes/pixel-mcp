@@ -17,7 +17,29 @@ import (
 // in proportion to their area. Use QuantizePaletteWithDetail to bias the
 // palette toward detailed regions instead.
 func QuantizePalette(img image.Image, targetColors int, algorithm string, preserveTransparency bool) ([]string, int, error) {
-	return QuantizePaletteWithDetail(img, targetColors, algorithm, preserveTransparency, 0)
+	return QuantizePaletteWithOptions(img, QuantizeOptions{
+		TargetColors:         targetColors,
+		Algorithm:            algorithm,
+		PreserveTransparency: preserveTransparency,
+	})
+}
+
+// QuantizeOptions configures palette reduction.
+type QuantizeOptions struct {
+	// TargetColors is the upper bound on palette size (2-256). MinColorDistance
+	// can bring the result below it.
+	TargetColors int
+	// Algorithm is median_cut, kmeans, or octree.
+	Algorithm string
+	// PreserveTransparency keeps transparent pixels transparent.
+	PreserveTransparency bool
+	// DetailStrength biases the palette toward detailed regions rather than
+	// large flat ones. See QuantizePaletteWithDetail. Only kmeans responds
+	// meaningfully, since it works by weighting how often pixels are sampled.
+	DetailStrength float64
+	// MinColorDistance collapses palette entries closer than this in LAB.
+	// See mergeSimilarColors. Zero disables merging.
+	MinColorDistance float64
 }
 
 // QuantizePaletteWithDetail reduces image colors, weighting detailed regions
@@ -29,6 +51,21 @@ func QuantizePalette(img image.Image, targetColors int, algorithm string, preser
 // backdrop can cover most of the frame and claim most of the palette, leaving
 // too few colors for the subject. Values around 3-5 work well for photos.
 func QuantizePaletteWithDetail(img image.Image, targetColors int, algorithm string, preserveTransparency bool, detailStrength float64) ([]string, int, error) {
+	return QuantizePaletteWithOptions(img, QuantizeOptions{
+		TargetColors:         targetColors,
+		Algorithm:            algorithm,
+		PreserveTransparency: preserveTransparency,
+		DetailStrength:       detailStrength,
+	})
+}
+
+// QuantizePaletteWithOptions reduces image colors with full control over
+// sampling and palette consolidation. See QuantizeOptions.
+func QuantizePaletteWithOptions(img image.Image, opts QuantizeOptions) ([]string, int, error) {
+	targetColors := opts.TargetColors
+	algorithm := opts.Algorithm
+	preserveTransparency := opts.PreserveTransparency
+
 	if targetColors < 2 || targetColors > 256 {
 		return nil, 0, fmt.Errorf("targetColors must be between 2 and 256, got %d", targetColors)
 	}
@@ -37,7 +74,7 @@ func QuantizePaletteWithDetail(img image.Image, targetColors int, algorithm stri
 	originalColors := CountUniqueColors(img, preserveTransparency)
 
 	// Sample pixels (subsample for large images)
-	pixels := sampleWeightedByDetail(img, 10000, detailStrength)
+	pixels := sampleWeightedByDetail(img, 10000, opts.DetailStrength)
 	if len(pixels) == 0 {
 		return nil, 0, fmt.Errorf("no pixels to sample from image")
 	}
@@ -85,6 +122,9 @@ func QuantizePaletteWithDetail(img image.Image, targetColors int, algorithm stri
 	default:
 		return nil, 0, fmt.Errorf("unknown algorithm: %s (must be median_cut, kmeans, or octree)", algorithm)
 	}
+
+	// Collapse entries the eye cannot separate, before transparency is added.
+	paletteColors = mergeSimilarColors(paletteColors, pixels, opts.MinColorDistance)
 
 	// Add transparency to palette if needed
 	if preserveTransparency {

@@ -25,6 +25,7 @@ type QuantizePaletteInput struct {
 	PreserveTransparency *bool    `json:"preserve_transparency,omitempty" jsonschema:"Keep transparent pixels transparent (default: true)"`
 	ConvertToIndexed     *bool    `json:"convert_to_indexed,omitempty" jsonschema:"Convert sprite to indexed color mode (default: true)"`
 	DetailStrength       *float64 `json:"detail_strength,omitempty" jsonschema:"Bias the palette toward detailed regions instead of large flat ones (0-10, default: 0 = every pixel weighted equally). Use 3-5 for photographic references where a blurred background would otherwise claim most of the palette."`
+	MinColorDistance     *float64 `json:"min_color_distance,omitempty" jsonschema:"Collapse palette entries that look like the same tone, keeping the most-used one (LAB CIE76 distance, 0-50, default: 0 = keep every entry). Quantizers always return exactly the requested count, so the surplus appears as near-identical entries that waste slots and make shading band; this also merges near-blacks into one. Around 2 is the threshold of visible difference; 8-15 gives a tighter, more deliberate palette. The result can be smaller than target_colors."`
 }
 
 // QuantizePaletteOutput defines the output for the quantize_palette tool.
@@ -68,6 +69,10 @@ func RegisterQuantizationTools(server *mcp.Server, client *aseprite.Client, gen 
 				defaultZero := 0.0
 				input.DetailStrength = &defaultZero
 			}
+			if input.MinColorDistance == nil {
+				defaultZero := 0.0
+				input.MinColorDistance = &defaultZero
+			}
 
 			// Validate inputs
 			if input.TargetColors < 2 || input.TargetColors > 256 {
@@ -85,6 +90,10 @@ func RegisterQuantizationTools(server *mcp.Server, client *aseprite.Client, gen 
 
 			if *input.DetailStrength < 0 || *input.DetailStrength > 10 {
 				return nil, nil, fmt.Errorf("detail_strength must be between 0 and 10, got %g", *input.DetailStrength)
+			}
+
+			if *input.MinColorDistance < 0 || *input.MinColorDistance > 50 {
+				return nil, nil, fmt.Errorf("min_color_distance must be between 0 and 50, got %g", *input.MinColorDistance)
 			}
 
 			// Check sprite file exists
@@ -127,13 +136,13 @@ func RegisterQuantizationTools(server *mcp.Server, client *aseprite.Client, gen 
 			}
 
 			// Perform quantization
-			palette, originalColors, err := aseprite.QuantizePaletteWithDetail(
-				img,
-				input.TargetColors,
-				input.Algorithm,
-				*input.PreserveTransparency,
-				*input.DetailStrength,
-			)
+			palette, originalColors, err := aseprite.QuantizePaletteWithOptions(img, aseprite.QuantizeOptions{
+				TargetColors:         input.TargetColors,
+				Algorithm:            input.Algorithm,
+				PreserveTransparency: *input.PreserveTransparency,
+				DetailStrength:       *input.DetailStrength,
+				MinColorDistance:     *input.MinColorDistance,
+			})
 			if err != nil {
 				return nil, nil, fmt.Errorf("quantization failed: %w", err)
 			}

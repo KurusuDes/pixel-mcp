@@ -38,6 +38,7 @@ func main() {
 	dither := flag.Bool("dither", false, "apply Floyd-Steinberg dithering during quantization")
 	detail := flag.Float64("detail", 0, "bias the palette toward detailed regions instead of large flat ones (0-10; try 4 for photos)")
 	edge := flag.Float64("edge", 0, "keep dark outlines crisp through the downsample instead of averaging them away (0-1; try 0.8 for character art)")
+	merge := flag.Float64("merge", 0, "collapse palette entries that read as the same tone (LAB distance, 0-50; try 8-15 for a tighter palette)")
 	outdir := flag.String("outdir", "refart-out", "output directory")
 	preview := flag.Int("preview", 8, "nearest-neighbor upscale factor for the preview PNG (0 = skip)")
 	flag.Parse()
@@ -48,13 +49,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := run(*input, *width, *height, *colors, *algorithm, *dither, *detail, *edge, *outdir, *preview); err != nil {
+	if err := run(*input, *width, *height, *colors, *algorithm, *dither, *detail, *edge, *merge, *outdir, *preview); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(input string, width, height, colors int, algorithm string, dither bool, detail, edge float64, outdir string, preview int) error {
+func run(input string, width, height, colors int, algorithm string, dither bool, detail, edge, merge float64, outdir string, preview int) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -146,13 +147,14 @@ func run(input string, width, height, colors int, algorithm string, dither bool,
 	}
 
 	// Step 3: quantize to a limited palette.
-	fmt.Printf("[3/5] quantize_palette (%s, %d colors, dither=%v, detail=%g)\n", algorithm, colors, dither, detail)
+	fmt.Printf("[3/5] quantize_palette (%s, max %d colors, dither=%v, detail=%g, merge=%g)\n", algorithm, colors, dither, detail, merge)
 	quantRaw, err := callTool(ctx, session, "quantize_palette", map[string]any{
-		"sprite_path":     spritePath,
-		"target_colors":   colors,
-		"algorithm":       algorithm,
-		"dither":          dither,
-		"detail_strength": detail,
+		"sprite_path":        spritePath,
+		"target_colors":      colors,
+		"algorithm":          algorithm,
+		"dither":             dither,
+		"detail_strength":    detail,
+		"min_color_distance": merge,
 	})
 	if err != nil {
 		return fmt.Errorf("quantize_palette: %w", err)
