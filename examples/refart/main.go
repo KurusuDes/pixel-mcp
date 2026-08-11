@@ -36,6 +36,7 @@ func main() {
 	colors := flag.Int("colors", 16, "target palette size (2-256)")
 	algorithm := flag.String("algorithm", "median_cut", "quantization algorithm: median_cut, kmeans, octree")
 	dither := flag.Bool("dither", false, "apply Floyd-Steinberg dithering during quantization")
+	detail := flag.Float64("detail", 0, "bias the palette toward detailed regions instead of large flat ones (0-10; try 4 for photos)")
 	outdir := flag.String("outdir", "refart-out", "output directory")
 	preview := flag.Int("preview", 8, "nearest-neighbor upscale factor for the preview PNG (0 = skip)")
 	flag.Parse()
@@ -46,13 +47,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := run(*input, *width, *height, *colors, *algorithm, *dither, *outdir, *preview); err != nil {
+	if err := run(*input, *width, *height, *colors, *algorithm, *dither, *detail, *outdir, *preview); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(input string, width, height, colors int, algorithm string, dither bool, outdir string, preview int) error {
+func run(input string, width, height, colors int, algorithm string, dither bool, detail float64, outdir string, preview int) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -143,12 +144,13 @@ func run(input string, width, height, colors int, algorithm string, dither bool,
 	}
 
 	// Step 3: quantize to a limited palette.
-	fmt.Printf("[3/5] quantize_palette (%s, %d colors, dither=%v)\n", algorithm, colors, dither)
+	fmt.Printf("[3/5] quantize_palette (%s, %d colors, dither=%v, detail=%g)\n", algorithm, colors, dither, detail)
 	quantRaw, err := callTool(ctx, session, "quantize_palette", map[string]any{
-		"sprite_path":   spritePath,
-		"target_colors": colors,
-		"algorithm":     algorithm,
-		"dither":        dither,
+		"sprite_path":     spritePath,
+		"target_colors":   colors,
+		"algorithm":       algorithm,
+		"dither":          dither,
+		"detail_strength": detail,
 	})
 	if err != nil {
 		return fmt.Errorf("quantize_palette: %w", err)

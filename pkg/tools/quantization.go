@@ -18,12 +18,13 @@ import (
 
 // QuantizePaletteInput defines the input parameters for the quantize_palette tool.
 type QuantizePaletteInput struct {
-	SpritePath           string `json:"sprite_path" jsonschema:"Path to source .aseprite file"`
-	TargetColors         int    `json:"target_colors" jsonschema:"Target palette size (2-256)"`
-	Algorithm            string `json:"algorithm" jsonschema:"Quantization algorithm: median_cut (default), kmeans, or octree"`
-	Dither               bool   `json:"dither" jsonschema:"Apply Floyd-Steinberg dithering during quantization (default: false)"`
-	PreserveTransparency *bool  `json:"preserve_transparency,omitempty" jsonschema:"Keep transparent pixels transparent (default: true)"`
-	ConvertToIndexed     *bool  `json:"convert_to_indexed,omitempty" jsonschema:"Convert sprite to indexed color mode (default: true)"`
+	SpritePath           string   `json:"sprite_path" jsonschema:"Path to source .aseprite file"`
+	TargetColors         int      `json:"target_colors" jsonschema:"Target palette size (2-256)"`
+	Algorithm            string   `json:"algorithm" jsonschema:"Quantization algorithm: median_cut (default), kmeans, or octree"`
+	Dither               bool     `json:"dither" jsonschema:"Apply Floyd-Steinberg dithering during quantization (default: false)"`
+	PreserveTransparency *bool    `json:"preserve_transparency,omitempty" jsonschema:"Keep transparent pixels transparent (default: true)"`
+	ConvertToIndexed     *bool    `json:"convert_to_indexed,omitempty" jsonschema:"Convert sprite to indexed color mode (default: true)"`
+	DetailStrength       *float64 `json:"detail_strength,omitempty" jsonschema:"Bias the palette toward detailed regions instead of large flat ones (0-10, default: 0 = every pixel weighted equally). Use 3-5 for photographic references where a blurred background would otherwise claim most of the palette."`
 }
 
 // QuantizePaletteOutput defines the output for the quantize_palette tool.
@@ -63,6 +64,10 @@ func RegisterQuantizationTools(server *mcp.Server, client *aseprite.Client, gen 
 				defaultTrue := true
 				input.ConvertToIndexed = &defaultTrue
 			}
+			if input.DetailStrength == nil {
+				defaultZero := 0.0
+				input.DetailStrength = &defaultZero
+			}
 
 			// Validate inputs
 			if input.TargetColors < 2 || input.TargetColors > 256 {
@@ -76,6 +81,10 @@ func RegisterQuantizationTools(server *mcp.Server, client *aseprite.Client, gen 
 			}
 			if !validAlgorithms[input.Algorithm] {
 				return nil, nil, fmt.Errorf("invalid algorithm: %s (must be median_cut, kmeans, or octree)", input.Algorithm)
+			}
+
+			if *input.DetailStrength < 0 || *input.DetailStrength > 10 {
+				return nil, nil, fmt.Errorf("detail_strength must be between 0 and 10, got %g", *input.DetailStrength)
 			}
 
 			// Check sprite file exists
@@ -118,11 +127,12 @@ func RegisterQuantizationTools(server *mcp.Server, client *aseprite.Client, gen 
 			}
 
 			// Perform quantization
-			palette, originalColors, err := aseprite.QuantizePalette(
+			palette, originalColors, err := aseprite.QuantizePaletteWithDetail(
 				img,
 				input.TargetColors,
 				input.Algorithm,
 				*input.PreserveTransparency,
+				*input.DetailStrength,
 			)
 			if err != nil {
 				return nil, nil, fmt.Errorf("quantization failed: %w", err)

@@ -12,7 +12,23 @@ import (
 
 // QuantizePalette reduces image colors using specified quantization algorithm.
 // Returns palette colors (hex strings), original color count, and error.
+//
+// Every pixel carries equal weight, so large flat regions influence the palette
+// in proportion to their area. Use QuantizePaletteWithDetail to bias the
+// palette toward detailed regions instead.
 func QuantizePalette(img image.Image, targetColors int, algorithm string, preserveTransparency bool) ([]string, int, error) {
+	return QuantizePaletteWithDetail(img, targetColors, algorithm, preserveTransparency, 0)
+}
+
+// QuantizePaletteWithDetail reduces image colors, weighting detailed regions
+// more heavily than flat ones when deriving the palette.
+//
+// detailStrength of 0 weights every pixel equally, matching QuantizePalette.
+// Higher values spend more of the palette on the parts of the image that carry
+// detail, which matters when converting photographic references: a blurred
+// backdrop can cover most of the frame and claim most of the palette, leaving
+// too few colors for the subject. Values around 3-5 work well for photos.
+func QuantizePaletteWithDetail(img image.Image, targetColors int, algorithm string, preserveTransparency bool, detailStrength float64) ([]string, int, error) {
 	if targetColors < 2 || targetColors > 256 {
 		return nil, 0, fmt.Errorf("targetColors must be between 2 and 256, got %d", targetColors)
 	}
@@ -21,7 +37,7 @@ func QuantizePalette(img image.Image, targetColors int, algorithm string, preser
 	originalColors := CountUniqueColors(img, preserveTransparency)
 
 	// Sample pixels (subsample for large images)
-	pixels := samplePixels(img, 10000)
+	pixels := sampleWeightedByDetail(img, 10000, detailStrength)
 	if len(pixels) == 0 {
 		return nil, 0, fmt.Errorf("no pixels to sample from image")
 	}
